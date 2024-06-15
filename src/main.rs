@@ -1,3 +1,5 @@
+mod arrows;
+use crate::arrows::{draw_arrow, Arrow, DOWNARROW, LEFTARROW, RIGHTARROW, UPARROW};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -15,10 +17,6 @@ use std::{
     error::Error,
     io::{stdout, Stdout},
 };
-const LEFTARROW: char = '\u{2b05}';
-const RIGHTARROW: char = '\u{2b95}';
-const UPARROW: char = '\u{2b06}';
-const DOWNARROW: char = '\u{2b07}';
 
 fn main() -> Result<(), Box<dyn Error>> {
     //Setup with alternate screen.
@@ -40,8 +38,7 @@ fn draw_ui(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), Box<
             [
                 UPARROW, DOWNARROW, RIGHTARROW, LEFTARROW, RIGHTARROW, UPARROW, DOWNARROW,
             ]
-            .iter()
-            .collect(),
+            .to_vec(),
         ),
         Phase::new(
             "Phase 2",
@@ -49,8 +46,7 @@ fn draw_ui(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), Box<
             [
                 DOWNARROW, DOWNARROW, DOWNARROW, RIGHTARROW, UPARROW, LEFTARROW,
             ]
-            .iter()
-            .collect(),
+            .to_vec(),
         ),
         Phase::new(
             "Phase 3",
@@ -58,8 +54,7 @@ fn draw_ui(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), Box<
             [
                 UPARROW, DOWNARROW, RIGHTARROW, LEFTARROW, RIGHTARROW, UPARROW, DOWNARROW,
             ]
-            .iter()
-            .collect(),
+            .to_vec(),
         ),
     ];
     let mut stateful_phases = Phases::new(phases);
@@ -117,10 +112,10 @@ struct Phases<'a> {
 struct Phase<'a> {
     name: &'a str,
     about: &'a str,
-    pattern: String,
+    pattern: Vec<Arrow>,
 }
 impl Phase<'_> {
-    fn new<'a>(name: &'a str, about: &'a str, pattern: String) -> Phase<'a> {
+    fn new<'a>(name: &'a str, about: &'a str, pattern: Vec<Arrow>) -> Phase<'a> {
         Phase {
             name,
             about,
@@ -144,25 +139,37 @@ impl Phases<'_> {
         terminal.clear()?;
         let index = self.state.selected().unwrap();
         let phase = self.items.get(index).unwrap();
-        let pattern = phase.pattern.clone();
         loop {
-            let phase_pattern = Span::styled(pattern.to_owned(), Style::default().fg(Color::Green));
+            let arrows = phase.pattern.clone();
+            let mut constraints = Vec::new();
             let area = terminal.size()?;
             let hchunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
                 .split(area);
+            for _ in arrows.iter() {
+                constraints.push(Constraint::Percentage(100 / arrows.len() as u16));
+            }
+            let wchunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(constraints)
+                .split(hchunks[1]);
+            let mut renderable_arrows = Vec::new();
+            for arrow in arrows {
+                let tmp = draw_arrow(arrow.to_owned())?;
+                renderable_arrows.push(tmp);
+            }
+            let asdf = wchunks.iter().zip(renderable_arrows.iter());
             let phase_about = Span::styled(phase.about, Style::default().fg(Color::Green));
             let phase_name = Span::styled(phase.name, Style::default().fg(Color::Green));
-            let pattern_box = Paragraph::new(phase_pattern)
-                .centered()
-                .block(Block::default().borders(Borders::ALL));
             let aboutbox = Paragraph::new(phase_about)
                 .centered()
                 .block(Block::default().title(phase_name).borders(Borders::ALL));
             terminal.draw(|f| {
                 f.render_widget(aboutbox, hchunks[0]);
-                f.render_widget(pattern_box, hchunks[1]);
+                for (area, widget) in asdf {
+                    f.render_widget(widget, area.to_owned());
+                }
             })?;
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
